@@ -43,31 +43,50 @@ def migrar_dados_para_adelino():
         if "ASSUNTO" not in df_pamela.columns:
             exibir_mensagem_erro(f"A coluna 'ASSUNTO' (Coluna B) não foi encontrada em '{os.path.basename(arquivo_pamela)}'.")
             return
+        if "DATA DA SOLUÇÃO" not in df_pamela.columns:
+            exibir_mensagem_erro(f"A coluna 'DATA DA SOLUÇÃO' (Coluna A) não foi encontrada em '{os.path.basename(arquivo_pamela)}'. Não é possível filtrar por data.")
+            return
 
         if "Descripción" not in df_adelino.columns:
             exibir_mensagem_erro(f"A coluna 'Descripción' não foi encontrada em '{os.path.basename(arquivo_adelino)}'. Não é possível colar os dados.")
             return
 
-        # --- Obtém os dados da coluna 'ASSUNTO' de pamela.xlsx a partir da linha 300 ---
-        pamela_assunto_data = df_pamela["ASSUNTO"].iloc[299:]
+        # --- NOVA PERSONALIZAÇÃO: Filtrar por 'DATA DA SOLUÇÃO' a partir da DATA ATUAL do sistema ---
+        # Converte a coluna 'DATA DA SOLUÇÃO' para datetime, tratando erros
+        df_pamela['DATA DA SOLUÇÃO'] = pd.to_datetime(df_pamela['DATA DA SOLUÇÃO'], errors='coerce', dayfirst=True)
+        
+        # Define a data mínima para o filtro como a data atual do sistema
+        data_minima = datetime.date.today() # Pega a data de hoje
 
-        # --- NOVA PERSONALIZAÇÃO: Remover linhas que contêm "Visita Presencial" ---
+        # Filtra as linhas onde 'DATA DA SOLUÇÃO' é maior ou igual à data_minima
+        # E também garante que a data não seja NaT (Not a Time)
+        df_pamela_filtrado_data = df_pamela[
+            (df_pamela['DATA DA SOLUÇÃO'].dt.date >= data_minima) & 
+            (df_pamela['DATA DA SOLUÇÃO'].notna())
+        ].copy() # .copy() para evitar SettingWithCopyWarning
+
+        # Extrai a coluna 'ASSUNTO' do DataFrame já filtrado pela data
+        pamela_assunto_data = df_pamela_filtrado_data["ASSUNTO"]
+        # --- FIM DA PERSONALIZAÃO POR DATA ---
+
+        # --- PERSONALIZAÇÃO EXISTENTE: Remover linhas que contêm "Visita Presencial" ---
         # Converte para string e filtra, ignorando maiúsculas/minúsculas
+        # O filtro de data já foi aplicado, agora aplicamos o filtro de texto
         pamela_assunto_data = pamela_assunto_data.astype(str)
         pamela_assunto_data = pamela_assunto_data[~pamela_assunto_data.str.contains("Visita Presencial", case=False, na=False)]
-        # --- FIM DA PERSONALIZAÇÃO ---
+        # --- FIM DA PERSONALIZAÇÃO POR TEXTO ---
 
-        # --- VERIFICAÇÃO: Se a coluna 'ASSUNTO' de Pamela está realmente vazia ou cheia de brancos após o filtro ---
+        # --- VERIFICAÇÕES DE DADOS APÓS OS FILTROS ---
         if pamela_assunto_data.empty:
-            exibir_mensagem_aviso(f"Após a filtragem por 'Visita Presencial', a coluna 'ASSUNTO' em '{os.path.basename(arquivo_pamela)}' está completamente vazia ou não contém dados válidos a partir da linha 300. Nenhuma informação será copiada.")
+            exibir_mensagem_aviso(f"Após a filtragem por data (a partir da data atual do sistema: {data_minima.strftime('%d/%m/%Y')}) e por texto ('Visita Presencial'), a coluna 'ASSUNTO' em '{os.path.basename(arquivo_pamela)}' está vazia ou não contém dados válidos. Nenhuma informação será copiada.")
             return
 
         valid_data_count = pamela_assunto_data.dropna().astype(str).str.strip().astype(bool).sum()
 
         if valid_data_count == 0:
-            exibir_mensagem_aviso(f"Após a filtragem por 'Visita Presencial', a coluna 'ASSUNTO' em '{os.path.basename(arquivo_pamela)}' contém {len(pamela_assunto_data)} linhas a partir da linha 300, mas todas parecem estar vazias ou conter apenas espaços em branco. Nenhuma informação significativa será copiada.")
+            exibir_mensagem_aviso(f"Após a filtragem por data e por texto, a coluna 'ASSUNTO' em '{os.path.basename(arquivo_pamela)}' contém {len(pamela_assunto_data)} linhas, mas todas parecem estar vazias ou conter apenas espaços em branco. Nenhuma informação significativa será copiada.")
             return
-        # --- FIM DA VERIFICAÇÃO ---
+        # --- FIM DAS VERIFICAÇÕES ---
         
         # Cria um DataFrame para as novas linhas, com as mesmas colunas de adelino.xlsx
         num_new_rows = len(pamela_assunto_data)
@@ -85,7 +104,7 @@ def migrar_dados_para_adelino():
         try:
             df_final_adelino.to_excel(arquivo_adelino, index=False, sheet_name='Sheet1')
             
-            exibir_mensagem_informacao(f"Exportação concluída com sucesso!\n{valid_data_count} registros válidos (excluindo 'Visita Presencial') da coluna 'ASSUNTO' de '{os.path.basename(arquivo_pamela)}' (a partir da linha 300) foram copiados para a coluna 'Descripción' de '{os.path.basename(arquivo_adelino)}'.\n\nATENÇÃO: Este método SOBRESCREVEU o arquivo, então a formatação original (cores, fontes, etc.) pode ter sido perdida, mas garante que todos os dados foram copiados corretamente. Para que as mudanças sejam visíveis, certifique-se de que 'adelino.xlsx' estava FECHADO antes de executar a macro.")
+            exibir_mensagem_informacao(f"Exportação concluída com sucesso!\n{valid_data_count} registros válidos (a partir da data atual do sistema: {data_minima.strftime('%d/%m/%Y')} e excluindo 'Visita Presencial') da coluna 'ASSUNTO' de '{os.path.basename(arquivo_pamela)}' foram copiados para a coluna 'Descripción' de '{os.path.basename(arquivo_adelino)}'.\n\nATENÇÃO: Este método SOBRESCREVEU o arquivo, então a formatação original (cores, fontes, etc.) pode ter sido perdida, mas garante que todos os dados foram copiados corretamente. Para que as mudanças sejam visíveis, certifique-se de que 'adelino.xlsx' estava FECHADO antes de executar a macro.")
 
         except Exception as e:
             exibir_mensagem_erro(f"Ocorreu um erro ao tentar sobrescrever o arquivo '{os.path.basename(arquivo_adelino)}':\n{e}\nIsso pode ocorrer se o arquivo estiver aberto ou se houver um problema de permissão.")
