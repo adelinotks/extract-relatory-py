@@ -5,6 +5,10 @@ import pandas as pd
 from pandas import ExcelWriter
 import re # Importa o módulo de expressões regulares para parsear o ID_Tarea
 
+#python get-pip.py
+#python -m pip install openpyxl
+#python -m pip install pandas
+
 def migrar_dados_para_adelino():
     # Obtém o contexto do LibreOffice
     ctx = uno.getComponentContext()
@@ -47,8 +51,15 @@ def migrar_dados_para_adelino():
         if "DATA DA SOLUÇÃO" not in df_pamela.columns:
             exibir_mensagem_erro(f"A coluna 'DATA DA SOLUÇÃO' (Coluna A) não foi encontrada em '{os.path.basename(arquivo_pamela)}'. Não é possível filtrar ou copiar por data.")
             return
+        if "SERVIÇO REALIZADO" not in df_pamela.columns: # Nova validação
+            exibir_mensagem_erro(f"A coluna 'SERVIÇO REALIZADO' (Coluna C) não foi encontrada em '{os.path.basename(arquivo_pamela)}'.")
+            return
+
         if "Descripción" not in df_adelino.columns:
             exibir_mensagem_erro(f"A coluna 'Descripción' não foi encontrada em '{os.path.basename(arquivo_adelino)}'. Não é possível colar os dados.")
+            return
+        if "Resolución" not in df_adelino.columns: # Nova validação
+            exibir_mensagem_erro(f"A coluna 'Resolución' não foi encontrada em '{os.path.basename(arquivo_adelino)}'. Não é possível preencher esta coluna.")
             return
         if "Fecha_Finalización" not in df_adelino.columns:
             exibir_mensagem_erro(f"A coluna 'Fecha_Finalización' não foi encontrada em '{os.path.basename(arquivo_adelino)}'. Não é possível extrair a data de referência.")
@@ -91,11 +102,12 @@ def migrar_dados_para_adelino():
         ].copy()
 
         # --- Remover linhas que contêm "Visita Presencial" da coluna ASSUNTO ---
-        # Certifica-se de que os dados relevantes de pamela_assunto_data e pamela_data_solucao são filtrados juntos
+        # Certifica-se de que os dados relevantes de pamela_assunto_data, pamela_data_solucao e pamela_servico_realizado são filtrados juntos
         filter_mask = ~df_pamela_filtrado_data["ASSUNTO"].astype(str).str.contains("Visita Presencial", case=False, na=False)
         
         pamela_assunto_data = df_pamela_filtrado_data.loc[filter_mask, "ASSUNTO"]
-        pamela_datas_solucao = df_pamela_filtrado_data.loc[filter_mask, "DATA DA SOLUÇÃO"] # <--- CAPTURANDO A COLUNA DE DATA
+        pamela_datas_solucao = df_pamela_filtrado_data.loc[filter_mask, "DATA DA SOLUÇÃO"]
+        pamela_servico_realizado = df_pamela_filtrado_data.loc[filter_mask, "SERVIÇO REALIZADO"] # <--- CAPTURANDO A COLUNA DE SERVIÇO REALIZADO
         # --- FIM DA PERSONALIZAÇÃO POR TEXTO ---
 
         # --- VERIFICAÇÕES DE DADOS APÓS OS FILTROS ---
@@ -142,11 +154,11 @@ def migrar_dados_para_adelino():
         # Atribui os dados gerados/filtrados
         new_rows_df['ID_Tarea'] = new_ids
         new_rows_df['Descripción'] = pamela_assunto_data.reset_index(drop=True)
+        new_rows_df['Resolución'] = pamela_servico_realizado.reset_index(drop=True) # <--- NOVA ATRIBUIÇÃO
         new_rows_df['Responsable'] = "Adelino Silva" 
         new_rows_df['Estado'] = "Completado"
         
         # Preenche as colunas 'Fecha_Inicio' e 'Fecha_Finalización' com a data da Pamela
-        # Assegura que o índice de pamela_datas_solucao está alinhado com new_rows_df
         new_rows_df['Fecha_Inicio'] = pamela_datas_solucao.dt.date.reset_index(drop=True)
         new_rows_df['Fecha_Finalización'] = pamela_datas_solucao.dt.date.reset_index(drop=True) 
         
@@ -157,7 +169,7 @@ def migrar_dados_para_adelino():
         try:
             df_final_adelino.to_excel(arquivo_adelino, index=False, sheet_name='Sheet1')
             
-            exibir_mensagem_informacao(f"Exportação concluída com sucesso!\n{valid_data_count} registros válidos (a partir de {data_minima.strftime('%d/%m/%Y')}, que é {data_minima_origem_texto}, e excluindo 'Visita Presencial') da coluna 'ASSUNTO' de '{os.path.basename(arquivo_pamela)}' foram copiados para a coluna 'Descripción' de '{os.path.basename(arquivo_adelino)}'.\n\nNovos IDs 'ID_Tarea' e as colunas 'Responsable', 'Estado', 'Fecha_Inicio' e 'Fecha_Finalización' foram gerados/preenchidos.\n\nATENÇÃO: Este método SOBRESCREVEU o arquivo, então a formatação original (cores, fontes, etc.) pode ter sido perdida, mas garante que todos os dados foram copiados corretamente. Para que as mudanças sejam visíveis, certifique-se de que 'adelino.xlsx' estava FECHADO antes de executar a macro.")
+            exibir_mensagem_informacao(f"Exportação concluída com sucesso!\n{valid_data_count} registros válidos (a partir de {data_minima.strftime('%d/%m/%Y')}, que é {data_minima_origem_texto}, e excluindo 'Visita Presencial') da coluna 'ASSUNTO' de '{os.path.basename(arquivo_pamela)}' foram copiados para a coluna 'Descripción' de '{os.path.basename(arquivo_adelino)}'.\n\nNovos IDs 'ID_Tarea' e as colunas 'Responsable', 'Estado', 'Fecha_Inicio', 'Fecha_Finalización' e 'Resolución' foram gerados/preenchidos.\n\nATENÇÃO: Este método SOBRESCREVEU o arquivo, então a formatação original (cores, fontes, etc.) pode ter sido perdida, mas garante que todos os dados foram copiados corretamente. Para que as mudanças sejam visíveis, certifique-se de que 'adelino.xlsx' estava FECHADO antes de executar a macro.")
 
         except Exception as e:
             exibir_mensagem_erro(f"Ocorreu um erro ao tentar sobrescrever o arquivo '{os.path.basename(arquivo_adelino)}':\n{e}\nIsso pode ocorrer se o arquivo estiver aberto ou se houver um problema de permissão.")
